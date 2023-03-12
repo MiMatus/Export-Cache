@@ -1,0 +1,28 @@
+{
+    "name": "mimatus/export-cache",
+    "description": "PSR-6 Cache without deserialization",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "MiMatus\\ExportCache\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Michal Matus"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "psr/simple-cache": "^2.0|^3.0",
+        "brick/varexporter": "^0.3.8"
+    },
+    "require-dev": {
+        "cache/integration-tests": "dev-master",
+        "phpunit/phpunit": "^10"
+    },
+    "scripts": {
+		"tests-unit": "phpunit ./tests"
+	}
+}
