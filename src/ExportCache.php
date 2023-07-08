@@ -24,7 +24,7 @@ class ExportCache implements CacheInterface
                 || !filter_var(\ini_get('opcache.enable'), \FILTER_VALIDATE_BOOL)
                 || (in_array(\PHP_SAPI, ['cli', 'phpdbg'], true) && !filter_var(\ini_get('opcache.enable_cli'), \FILTER_VALIDATE_BOOL))
         ) {
-            //throw new ExportCacheException('OPCache is not enabled, check your ini configuration');
+            throw new ExportCacheException('OPCache is not enabled, check your ini configuration');
         }
 
         self::$initTime ??= time();
@@ -43,7 +43,7 @@ class ExportCache implements CacheInterface
         try{
             $cachedItem = include $keyFilePath;
             if($cachedItem === false){
-                return null;
+                return $default;
             }
 
             if($this->isExpired($cachedItem)){
@@ -51,11 +51,7 @@ class ExportCache implements CacheInterface
             }
 
             return $cachedItem['value'];
-        } catch(ExportCacheException){
-            return $default;
-        } catch(Error){
-            throw new ExportCacheException('Invalid stored value for key:'.$key);
-        } finally {
+        }finally {
             restore_error_handler();
         }
     }

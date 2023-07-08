@@ -23,6 +23,6 @@
         "phpunit/phpunit": "^10"
     },
     "scripts": {
-		"tests-unit": "phpunit ./tests"
+		"run-tests": "phpunit ./tests"
 	}
 }
