@@ -1,0 +1,12 @@
+
+rules:
+    - PHPStan\Rules\DeadCode\UnreachableStatementRule
+
+parameters:
+    level: 9
+    paths:
+        - src
+        - tests
+    ignoreErrors:
+        - '#Method MiMatus\\ExportCache\\ExportCache\:\:setMultiple\(\) has parameter \$values with no value type specified in iterable type iterable\.$#'
+        - '#Class PhpBench\\Attributes\\RetryThreshold is not an Attribute class\.$#'

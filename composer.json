@@ -1,11 +1,16 @@
 {
     "name": "mimatus/export-cache",
-    "description": "PSR-6 Cache without deserialization",
+    "description": "PSR-6 Cache without deserialization speeded-up with opcache",
     "type": "library",
     "license": "MIT",
     "autoload": {
         "psr-4": {
             "MiMatus\\ExportCache\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "MiMatus\\ExportCache\\Tests\\": "tests/"
         }
     },
     "authors": [
@@ -14,15 +19,26 @@
         }
     ],
     "require": {
-        "php": ">=8.1",
+        "php": ">=8.2",
         "psr/simple-cache": "^2.0|^3.0",
         "brick/varexporter": "^0.3.8"
     },
     "require-dev": {
         "cache/integration-tests": "dev-master",
-        "phpunit/phpunit": "^10"
+        "phpunit/phpunit": "^10",
+        "slevomat/coding-standard": "^8.0",
+        "phpbench/phpbench": "^1.0",
+        "phpstan/phpstan": "^1.10"
     },
     "scripts": {
-		"tests-unit": "phpunit ./tests"
-	}
+		"tests": "phpunit --disallow-test-output ./tests",
+		"phpcs": "phpcs --extensions=php --standard=phpcs.xml -sp src tests",
+		"fix-style": "phpcbf --extensions=php --standard=phpcs.xml src tests",
+		"phpstan": "phpstan analyse -c phpstan.neon"
+	},
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    }
 }
