@@ -1,6 +1,6 @@
 {
     "name": "mimatus/export-cache",
-    "description": "PSR-6 Cache without deserialization speeded-up with opcache",
+    "description": "PSR-6 Cache without deserialization speeded-up with OPcache",
     "type": "library",
     "license": "MIT",
     "autoload": {
@@ -15,9 +15,12 @@
     },
     "authors": [
         {
-            "name": "Michal Matus"
+            "name": "Michal Matúš"
         }
     ],
+    "provide": {
+        "psr/simple-cache-implementation": "2.0|3.0"
+    },
     "require": {
         "php": ">=8.2",
         "psr/simple-cache": "^2.0|^3.0",
@@ -25,10 +28,10 @@
     },
     "require-dev": {
         "cache/integration-tests": "dev-master",
-        "phpunit/phpunit": "^10",
-        "slevomat/coding-standard": "^8.0",
-        "phpbench/phpbench": "^1.0",
-        "phpstan/phpstan": "^1.10"
+        "phpunit/phpunit": "^10.2.6",
+        "slevomat/coding-standard": "^8.13.1",
+        "phpbench/phpbench": "^1.2.14",
+        "phpstan/phpstan": "^1.10.26"
     },
     "scripts": {
 		"tests": "phpunit --disallow-test-output ./tests",
