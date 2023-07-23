@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace MiMatus\ExportCache;
 
-use Brick\VarExporter\ExportException;
 use Brick\VarExporter\VarExporter;
 use DateInterval;
 use DateTimeImmutable;
 use Psr\SimpleCache\CacheInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use Throwable;
 
 /**
  * @phpstan-type CacheItem array{expiration: float|null, value: mixed}
@@ -56,11 +56,17 @@ class ExportCache implements CacheInterface
         }
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws InvalidArgumentException For invalid keys or values
+     * @throws ExportCacheException When value can not be saved - lock is present, file system error etc.
+     */
     public function set(string $key, mixed $value, null|int|DateInterval $ttl = null): bool
     {
         try {
             $exportedValue = VarExporter::export(['expiration' => $this->getExpirationTimestamp($ttl), 'value' => $value], VarExporter::CLOSURE_SNAPSHOT_USES | VarExporter::INLINE_SCALAR_LIST);
-        } catch (ExportException $e) {
+        } catch (Throwable $e) {
             throw new InvalidArgumentException(sprintf('Cache key "%s" has non-exportable "%s" value.', $key, get_debug_type($value)), 0, $e);
         }
 
@@ -80,7 +86,6 @@ class ExportCache implements CacheInterface
                 throw new ExportCacheException('Unable to flush buffered data into: ' . $filePath);
             }
 
-
             if (!self::$opCacheEnabled) {
                 return;
             }
@@ -97,6 +102,12 @@ class ExportCache implements CacheInterface
         return true;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws InvalidArgumentException For invalid keys or values
+     * @throws ExportCacheException When value can not be saved - lock is present, file system error etc.
+     */
     public function setMultiple(iterable $values, null|int|DateInterval $ttl = null): bool
     {
         $result = true;
@@ -154,13 +165,16 @@ class ExportCache implements CacheInterface
         return $result;
     }
 
+    /**
+     * @throws ExportCacheException
+     */
     private function removeCacheFile(string $filePath): bool
     {
         if (self::$opCacheEnabled && !opcache_invalidate($filePath, true)) {
             throw new ExportCacheException('Unable to invalidate op cache' . $filePath);
         }
-
-        return unlink($filePath);
+        // Supress warning which would be generated for non-existent file
+        return @unlink($filePath);
     }
 
     /**
@@ -190,6 +204,9 @@ class ExportCache implements CacheInterface
         }
     }
 
+    /**
+     * @throws ExportCacheException
+     */
     private function getExpirationTimestamp(null|int|DateInterval $expiraton): ?float
     {
         if ($expiraton === null) {
@@ -203,6 +220,9 @@ class ExportCache implements CacheInterface
         }
     }
 
+    /**
+     * @throws ExportCacheException
+     */
     private function exclusivelyAccess(string $directoryPath, string $filename, \Closure $modifier): void
     {
         $filePath = $directoryPath . \DIRECTORY_SEPARATOR . $filename;
