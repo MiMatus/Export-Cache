@@ -7,8 +7,10 @@ namespace MiMatus\ExportCache\Tests\Integration;
 use Cache\IntegrationTests\SimpleCacheTest;
 use Closure;
 use MiMatus\ExportCache\ExportCache;
+use MiMatus\ExportCache\InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionFunction;
+use SplFileInfo;
 
 class ExportCacheTest extends SimpleCacheTest
 {
@@ -32,7 +34,8 @@ class ExportCacheTest extends SimpleCacheTest
 
     public function createSimpleCache()
     {
-        return new ExportCache(__DIR__ . \DIRECTORY_SEPARATOR . 'data');
+        $storagePath = sys_get_temp_dir() . \DIRECTORY_SEPARATOR . 'export-cache-tests';
+        return new ExportCache($storagePath);
     }
 
     /**
@@ -76,6 +79,36 @@ class ExportCacheTest extends SimpleCacheTest
                 'closure' => static function (): string {
                     return 'test';
                 },
+            ],
+        ];
+    }
+
+    #[DataProvider('getUnsupportedDataValues')]
+    public function testUnsupportedDataTypeClosure(mixed $value): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->cache->set('key', $value);
+    }
+
+        /**
+     * @return array<string, array<string, mixed>>
+     */
+    public static function getUnsupportedDataValues(): array
+    {
+        $callable1 = fn() => 4; $callable2 = fn() => 5; // phpcs:ignore Generic.Formatting.DisallowMultipleStatements.SameLine
+        return [
+            '1st class callable from named function' => [
+                'value' => str_contains(...),
+            ],
+            'multiple callable on same line' => [
+                'value' => $callable1,
+            ],
+            'multiple callable on same line 2' => [
+                'value' => $callable2,
+            ],
+            // Most of internal objects are not supported
+            'internal object' => [
+                'value' => new SplFileInfo('example.php'),
             ],
         ];
     }
