@@ -12,9 +12,9 @@ jobs:
       - name: Build docker images
         run: make build
       - name: Codestyle check
-        run: make phpcs
+        run: make phpcs ALLOWED_VOLUME=0
       - name: Static analysis
-        run: make phpstan
+        run: make phpstan ALLOWED_VOLUME=0
       - name: Tests
-        run: make tests
+        run: make tests ALLOWED_VOLUME=0
 
