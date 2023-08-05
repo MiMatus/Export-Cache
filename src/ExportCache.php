@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MiMatus\ExportCache;
 
 use Brick\VarExporter\VarExporter;
+use Closure;
 use DateInterval;
 use DateTimeImmutable;
 use Psr\SimpleCache\CacheInterface;
@@ -14,6 +15,7 @@ use Throwable;
 
 /**
  * @phpstan-type CacheItem array{expiration: float|null, value: mixed}
+ * @phpstan-type CacheFileInfo array{filePath: string, directoryPath: string, filename: string}
  */
 class ExportCache implements CacheInterface
 {
@@ -23,7 +25,7 @@ class ExportCache implements CacheInterface
 
     private readonly string $storagePath;
 
-    private readonly \Closure $errorHandler;
+    private readonly Closure $errorHandler;
 
     public function __construct(
         ?string $storagePath = null,
@@ -41,12 +43,22 @@ class ExportCache implements CacheInterface
 
     public function get(string $key, mixed $default = null): mixed
     {
-        $cachedItem = $this->getCacheItem($key);
-        if ($cachedItem === null || $this->isExpired($cachedItem)) {
-            return $default;
-        }
+        $fileInfo = $this->getCacheFileInfo($key);
+        return $this->useCacheItem($key, function (?array $cachedItem) use ($fileInfo, $default) {
+            if ($cachedItem === null) {
+                return $default;
+            }
 
-        return $cachedItem['value'];
+            if (!$this->isExpired($cachedItem)) {
+                return $cachedItem['value'];
+            }
+
+            if (!$this->removeCacheFile($fileInfo['filePath'])) {
+                throw new ExportCacheException('Unable to clean-up expired file `' . $fileInfo['filePath'] . '`');
+            }
+
+            return $default;
+        });
     }
 
     public function getMultiple(iterable $keys, mixed $default = null): iterable
@@ -70,32 +82,36 @@ class ExportCache implements CacheInterface
             throw new InvalidArgumentException(sprintf('Cache key "%s" has non-exportable "%s" value.', $key, get_debug_type($value)), 0, $e);
         }
 
-        [$directoryPath, $filename, $filePath] = $this->getFilePath($key);
+        $fileInfo = $this->getCacheFileInfo($key);
         $cacheValue = '<?php return ' . $exportedValue . ';';
 
-        $this->exclusivelyAccess($directoryPath, $filename, static function ($file) use ($cacheValue, $filePath) {
+        $this->useFile($fileInfo, FileMode::Write, static function ($file) use ($cacheValue, $fileInfo) {
+            if ($file === null) {
+                throw new ExportCacheException('Unable to accuire file resource: ' . $fileInfo['filePath']);
+            }
+
             if (!ftruncate($file, 0)) {
-                throw new ExportCacheException('Unable to empty file: ' . $filePath);
+                throw new ExportCacheException('Unable to empty file: ' . $fileInfo['filePath']);
             }
 
             if (fwrite($file, $cacheValue) !== strlen($cacheValue)) {
-                throw new ExportCacheException('Unable to write data into: ' . $filePath);
+                throw new ExportCacheException('Unable to write data into: ' . $fileInfo['filePath']);
             }
 
             if (!fflush($file)) {
-                throw new ExportCacheException('Unable to flush buffered data into: ' . $filePath);
+                throw new ExportCacheException('Unable to flush buffered data into: ' . $fileInfo['filePath']);
             }
 
             if (!self::$opCacheEnabled) {
                 return;
             }
 
-            if (!touch($filePath, self::$fileMTime)) {
-                throw new ExportCacheException('Unable to modify file MTime for file: ' . $filePath);
+            if (!touch($fileInfo['filePath'], self::$fileMTime)) {
+                throw new ExportCacheException('Unable to modify file MTime for file: ' . $fileInfo['filePath']);
             }
 
-            if (!opcache_invalidate($filePath, true) || !opcache_compile_file($filePath)) {
-                throw new ExportCacheException('Unable properly update op cache' . $filePath);
+            if (!opcache_invalidate($fileInfo['filePath'], true) || !opcache_compile_file($fileInfo['filePath'])) {
+                throw new ExportCacheException('Unable properly update op cache' . $fileInfo['filePath']);
             }
         });
 
@@ -119,20 +135,20 @@ class ExportCache implements CacheInterface
 
     public function has(string $key): bool
     {
-        $cacheItem = $this->getCacheItem($key);
-
-        return $cacheItem !== null && !$this->isExpired($cacheItem);
+        return $this->useCacheItem($key, function (?array $cachedItem) {
+            return $cachedItem !== null && !$this->isExpired($cachedItem);
+        });
     }
 
     public function delete(string $key): bool
     {
-        [, , $cacheFilePath] = $this->getFilePath($key);
+        ['filePath' => $filePath] = $this->getCacheFileInfo($key);
 
-        if (!file_exists($cacheFilePath)) {
+        if (!file_exists($filePath)) {
             return true;
         }
 
-        return $this->removeCacheFile($cacheFilePath);
+        return $this->removeCacheFile($filePath);
     }
 
     public function deleteMultiple(iterable $keys): bool
@@ -178,30 +194,28 @@ class ExportCache implements CacheInterface
     }
 
     /**
-     * @return CacheItem|null
+     * @template T
+     * @param Closure(CacheItem|null): T $modifier
+     * @return T
+     *
+     * @throws ExportCacheException
      */
-    private function getCacheItem(string $key): ?array
+    private function useCacheItem(string $key, Closure $modifier): mixed
     {
-        [, , $cacheFilePath] = $this->getFilePath($key);
+        $fileInfo = $this->getCacheFileInfo($key);
 
-        if (!file_exists($cacheFilePath)) {
-            return null;
-        }
-
-        set_error_handler($this->errorHandler);
-
-        try {
-            $cachedItem = include $cacheFilePath;
-            if ($cachedItem === false) {
-                return null;
+        return $this->useFile($fileInfo, FileMode::Read, static function () use ($fileInfo, $modifier) {
+            $cachedItem = null;
+            try {
+                $includedValue = include $fileInfo['filePath'];
+                if ($includedValue !== false) {
+                    $cachedItem = $includedValue;
+                }
+            } catch (ExportCacheException) {
             }
 
-            return $cachedItem;
-        } catch (ExportCacheException) {
-            return null;
-        } finally {
-            restore_error_handler();
-        }
+            return $modifier($cachedItem);
+        });
     }
 
     /**
@@ -221,15 +235,24 @@ class ExportCache implements CacheInterface
     }
 
     /**
+     * @template T
+     * @param Closure(resource|null): T $fileModifier
+     * @param CacheFileInfo $fileInfo
+     * @return T
+     *
      * @throws ExportCacheException
      */
-    private function exclusivelyAccess(string $directoryPath, string $filename, \Closure $modifier): void
+    private function useFile(array $fileInfo, FileMode $fileMode, Closure $fileModifier): mixed
     {
-        $filePath = $directoryPath . \DIRECTORY_SEPARATOR . $filename;
+        ['filePath' => $filePath, 'directoryPath' => $directoryPath, ] = $fileInfo;
 
         set_error_handler($this->errorHandler);
-        if (!is_dir($directoryPath) && !mkdir($directoryPath, 0777, true)) {
+        if ($fileMode === FileMode::Write && !is_dir($directoryPath) && !mkdir($directoryPath, 0777, true)) {
             throw new ExportCacheException('Unable to create directories: ' . $filePath);
+        }
+
+        if ($fileMode === FileMode::Read && !file_exists($filePath)) {
+            return $fileModifier(null);
         }
 
         $fileResource = fopen($filePath, 'c+b');
@@ -239,36 +262,31 @@ class ExportCache implements CacheInterface
             );
         }
 
-        if (!flock($fileResource, \LOCK_EX | \LOCK_NB)) {
+        if (!flock($fileResource, $fileMode->getFileLock() | \LOCK_NB)) {
             throw new ExportCacheException(
                 sprintf('Unable to aquire lock for file %s', $filePath)
             );
         }
 
         try {
-            $modifier($fileResource);
-
-            if (!flock($fileResource, \LOCK_UN)) {
-                throw new ExportCacheException('Unable to flush buffered data into: ' . $fileResource);
-            }
+            return $fileModifier($fileResource);
         } finally {
             fclose($fileResource);
+            restore_error_handler();
         }
-
-        restore_error_handler();
     }
 
     /**
-     * @return array{0: string, 1: string, 2: string}
+     * @return CacheFileInfo
      */
-    private function getFilePath(string $key): array
+    private function getCacheFileInfo(string $key): array
     {
         $hash = str_replace('/', '-', base64_encode(hash('xxh128', static::class . $key, true)));
         $directoryPath = $this->storagePath . \DIRECTORY_SEPARATOR . $hash[0] . \DIRECTORY_SEPARATOR . $hash[1];
         $filename = substr($hash, 2, 20);
         $filePath = $directoryPath . \DIRECTORY_SEPARATOR . $filename;
 
-        return [$directoryPath, $filename, $filePath];
+        return ['filePath' => $filePath, 'directoryPath' => $directoryPath, 'filename' => $filename];
     }
 
     /**

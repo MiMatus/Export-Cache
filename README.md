@@ -53,6 +53,12 @@ Thanks to [brick/varexporter](https://github.com/brick/varexporter) which is use
 - annonymous classes
 - eval()'d or same line declared Closures, [more info](https://github.com/brick/varexporter#caveats)
 
+## Concurrency
+- [x] Dirty Reads
+- [x] Lost Updates
+- [x] Phantom read
+- [ ] Non-repeatable Reads - WIP
+
 ## Performance - WIP 
 
 <details><summary>Read</summary>
